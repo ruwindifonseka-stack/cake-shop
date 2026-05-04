@@ -1,5 +1,6 @@
-<?php 
-require 'config.php'; 
+<?php
+require 'config.php';
+
 
 // Owner check
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'owner') {
@@ -7,18 +8,19 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'owner') {
     exit();
 }
 
+
 // Handle ADD
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_cake'])) {
     $name = mysqli_real_escape_string($conn, $_POST['name']);
     $category_id = (int)$_POST['category_id'];
     $price = (float)$_POST['price'];
     $details = mysqli_real_escape_string($conn, $_POST['details']);
-    
+   
     $image_name = '';
     if (isset($_FILES['image']) && $_FILES['image']['error'] == 0) {
         // Create images folder if missing
         if (!file_exists('images')) mkdir('images', 0777, true);
-        
+       
         $target_dir = "images/";
         $image_extension = strtolower(pathinfo($_FILES['image']['name'], PATHINFO_EXTENSION));
         if (in_array($image_extension, ['jpg','jpeg','png','gif'])) {
@@ -26,9 +28,28 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_cake'])) {
             move_uploaded_file($_FILES['image']['tmp_name'], $target_dir . $image_name);
         }
     }
-    
+   
     $sql = "INSERT INTO cakes (category_id, name, image, price, details) VALUES ($category_id, '$name', '$image_name', $price, '$details')";
     mysqli_query($conn, $sql);
+}
+
+// Handle EDIT
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_cake'])) {
+    $edit_id = (int)$_POST['edit_id'];
+    $edit_name = mysqli_real_escape_string($conn, $_POST['edit_name']);
+    $edit_price = (float)$_POST['edit_price'];
+    $edit_category = (int)$_POST['edit_category'];
+    
+    mysqli_query($conn, "UPDATE cakes SET name='$edit_name', price=$edit_price, category_id=$edit_category WHERE id=$edit_id");
+    
+    header('Location: manage_cakes.php?success=edit');
+    exit();
+}
+
+// Cancel edit
+if (isset($_GET['cancel_edit'])) {
+    header('Location: manage_cakes.php');
+    exit();
 }
 
 // Handle DELETE
@@ -44,6 +65,7 @@ if (isset($_GET['delete'])) {
     mysqli_free_result($cake_result);
 }
 
+
 // Get cakes + categories
 $cakes_result = mysqli_query($conn, "SELECT c.*, cat.name as category FROM cakes c LEFT JOIN categories cat ON c.category_id=cat.id ORDER BY c.id DESC");
 $cakes = [];
@@ -51,6 +73,7 @@ while ($row = mysqli_fetch_assoc($cakes_result)) {
     $cakes[] = $row;
 }
 mysqli_free_result($cakes_result);
+
 
 $categories_result = mysqli_query($conn, "SELECT * FROM categories ORDER BY name");
 $categories = [];
@@ -79,17 +102,23 @@ mysqli_free_result($categories_result);
             </div>
         </div>
     </nav>
-    
+   
     <div class="container-fluid my-5">
         <div class="row">
             <div class="col-12">
                 <h1 class="mb-4"><i class="fas fa-birthday-cake text-danger me-3"></i>Manage Cakes</h1>
-                
+               
                 <!-- Add Form -->
                 <?php if (isset($_GET['success'])): ?>
-                <div class="alert alert-success">Cake added successfully!</div>
-                <?php endif; ?>
-                
+<div class="alert alert-success">
+    <?php if($_GET['success']=='edit'): ?>
+        Cake updated successfully! ✅
+    <?php else: ?>
+        Cake added successfully! 🎉
+    <?php endif; ?>
+</div>
+<?php endif; ?>
+               
                 <div class="card shadow-lg mb-5">
                     <div class="card-header bg-success text-white">
                         <h3><i class="fas fa-plus me-2"></i>Add New Cake</h3>
@@ -133,7 +162,6 @@ mysqli_free_result($categories_result);
                         </form>
                     </div>
                 </div>
-                
                 <!-- Cakes Table -->
                 <div class="card shadow-lg">
                     <div class="card-header bg-primary text-white">
@@ -169,18 +197,37 @@ mysqli_free_result($categories_result);
                                                 <small>📷</small>
                                             </div>
                                             <?php endif; ?>
-                                        </td>
+                                            </td>
                                         <td><strong><?=$cake['name']?></strong></td>
                                         <td><span class="badge bg-info"><?=$cake['category'] ?: 'Uncategorized'?></span></td>
                                         <td><span class="fw-bold text-success">LKR <?=number_format($cake['price'], 0)?></span></td>
                                         <td><?=htmlspecialchars(substr($cake['details'], 0, 50))?>...</td>
-                                        <td>
-                                            <button class="btn btn-sm btn-warning">✏️ Edit</button>
-                                            <a href="?delete=<?=$cake['id']?>" class="btn btn-sm btn-danger" 
-                                               onclick="return confirm('Delete <?=htmlspecialchars($cake['name'])?>?')">
-                                                🗑️ Delete
-                                            </a>
-                                        </td>
+    <td>
+    <!-- Edit Form (Inline) -->
+    <a href="?edit=<?=$cake['id']?>" class="btn btn-sm btn-warning edit-btn">
+        <i class="fas fa-edit"></i> Edit
+    </a>
+
+    <?php if (isset($_GET['edit']) && $_GET['edit'] == $cake['id']): ?>
+    <form method="POST" class="d-inline" enctype="multipart/form-data">
+        <input type="hidden" name="edit_id" value="<?=$cake['id']?>">
+        <input type="text" name="edit_name" value="<?=htmlspecialchars($cake['name'])?>" class="form-control form-control-sm d-inline-block w-auto" style="width:120px;">
+        <input type="number" name="edit_price" value="<?=$cake['price']?>" step="0.01" class="form-control form-control-sm d-inline-block w-auto" style="width:80px;">
+        <select name="edit_category" class="form-select form-select-sm d-inline-block w-auto" style="width:100px;">
+            <?php foreach($categories as $cat): ?>
+            <option value="<?=$cat['id']?>" <?=($cake['category_id']==$cat['id']) ? 'selected' : ''?>><?=$cat['name']?></option>
+            <?php endforeach; ?>
+        </select>
+        <button type="submit" name="update_cake" class="btn btn-sm btn-success">💾</button>
+        <a href="?cancel_edit=1" class="btn btn-sm btn-secondary">❌</a>
+    </form>
+    <?php endif; ?>
+    <!-- Delete -->
+    <a href="?delete=<?=$cake['id']?>" class="btn btn-sm btn-danger" 
+       onclick="return confirm('Delete <?=htmlspecialchars($cake['name'])?>?')">
+        <i class="fas fa-trash"></i>
+    </a>
+</td>
                                     </tr>
                                     <?php endforeach; ?>
                                 </tbody>
